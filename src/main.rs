@@ -4,6 +4,10 @@
 //! It deliberately does not implement any diff renderer itself; it only
 //! remembers one base file and asks Zed to show the diff.
 
+mod cli;
+mod state;
+
 fn main() {
-    // The command dispatch arrives with the CLI module.
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    std::process::exit(cli::run(&args));
 }
