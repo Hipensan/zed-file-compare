@@ -78,3 +78,85 @@ pub fn clear_in(dir: &Path) -> Result<(), String> {
         Err(e) => Err(format!("could not remove state file: {e}")),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::path::Path;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    use super::*;
+
+    static NEXT: AtomicUsize = AtomicUsize::new(0);
+
+    /// A unique temp directory per test run so parallel tests never collide.
+    fn test_dir() -> PathBuf {
+        let n = NEXT.fetch_add(1, Ordering::SeqCst);
+        let dir = std::env::temp_dir().join(format!("zed-anydiff-test-{}-{n}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).expect("create test dir");
+        dir
+    }
+
+    #[test]
+    fn state_file_lives_in_os_cache_subdir() {
+        let dir = test_dir();
+        assert_eq!(
+            state_file_in(&dir),
+            dir.join("zed-anydiff").join("state.json")
+        );
+    }
+
+    #[test]
+    fn save_then_load_round_trips() {
+        let dir = test_dir();
+        let base = Path::new("C:\\Users\\me\\src\\foo.c");
+        save_in(&dir, base).unwrap();
+        assert_eq!(load_in(&dir).unwrap(), Some(base.to_path_buf()));
+    }
+
+    #[test]
+    fn save_then_load_with_spaces_and_unicode() {
+        let dir = test_dir();
+        let base = Path::new("D:\\repo 1\\файл.txt");
+        save_in(&dir, base).unwrap();
+        assert_eq!(load_in(&dir).unwrap(), Some(base.to_path_buf()));
+    }
+
+    #[test]
+    fn save_then_load_with_quote_in_path() {
+        let dir = test_dir();
+        let base = Path::new("C:\\Users\\me\\src\\foo \"quoted\".txt");
+        save_in(&dir, base).unwrap();
+        assert_eq!(load_in(&dir).unwrap(), Some(base.to_path_buf()));
+    }
+
+    #[test]
+    fn load_without_state_file_is_none() {
+        let dir = test_dir();
+        assert_eq!(load_in(&dir).unwrap(), None);
+    }
+
+    #[test]
+    fn load_with_corrupt_state_file_errors() {
+        let dir = test_dir();
+        fs::create_dir_all(dir.join("zed-anydiff")).unwrap();
+        fs::write(dir.join("zed-anydiff").join("state.json"), "not json").unwrap();
+        assert!(load_in(&dir).is_err());
+    }
+
+    #[test]
+    fn clear_removes_state() {
+        let dir = test_dir();
+        save_in(&dir, Path::new("/a/foo.c")).unwrap();
+        clear_in(&dir).unwrap();
+        assert_eq!(load_in(&dir).unwrap(), None);
+    }
+
+    #[test]
+    fn clear_is_idempotent() {
+        let dir = test_dir();
+        clear_in(&dir).unwrap();
+        clear_in(&dir).unwrap();
+        assert_eq!(load_in(&dir).unwrap(), None);
+    }
+}

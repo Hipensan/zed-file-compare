@@ -167,3 +167,158 @@ fn cmd_clear() -> i32 {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::fs;
+    use std::path::PathBuf;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::Mutex;
+
+    use super::*;
+
+    /// Serializes tests that redirect `ZED_ANYDIFF_STATE_DIR`: the env var
+    /// is process-wide, so two concurrent tests could clobber each other's
+    /// state location.
+    static ENV_LOCK: Mutex<()> = Mutex::new(());
+
+    static NEXT: AtomicUsize = AtomicUsize::new(0);
+
+    struct Sandbox {
+        dir: PathBuf,
+        prev: Option<std::ffi::OsString>,
+    }
+
+    impl Sandbox {
+        fn new() -> Self {
+            let n = NEXT.fetch_add(1, Ordering::SeqCst);
+            let dir = std::env::temp_dir()
+                .join(format!("zed-anydiff-cli-test-{}-{n}", std::process::id()));
+            fs::create_dir_all(&dir).unwrap();
+            let prev = std::env::var_os("ZED_ANYDIFF_STATE_DIR");
+            std::env::set_var("ZED_ANYDIFF_STATE_DIR", &dir);
+            Sandbox { dir, prev }
+        }
+
+        fn file(&self, name: &str, content: &str) -> PathBuf {
+            let p = self.dir.join(name);
+            fs::write(&p, content).unwrap();
+            p
+        }
+
+        fn argv(&self, args: &[&str]) -> Vec<String> {
+            args.iter().map(|s| s.to_string()).collect()
+        }
+    }
+
+    impl Drop for Sandbox {
+        fn drop(&mut self) {
+            match &self.prev {
+                Some(v) => std::env::set_var("ZED_ANYDIFF_STATE_DIR", v),
+                None => std::env::remove_var("ZED_ANYDIFF_STATE_DIR"),
+            }
+            let _ = fs::remove_dir_all(&self.dir);
+        }
+    }
+
+    fn with_sandbox(f: impl FnOnce(&Sandbox)) {
+        let _guard = match ENV_LOCK.lock() {
+            Ok(g) => g,
+            Err(e) => e.into_inner(),
+        };
+        let sb = Sandbox::new();
+        f(&sb);
+    }
+
+    #[test]
+    fn base_persists_and_status_reports_it() {
+        with_sandbox(|sb| {
+            let foo = sb.file("foo.c", "a");
+            assert_eq!(run(&sb.argv(&["base", foo.to_str().unwrap()])), 0);
+            assert_eq!(state::load().unwrap(), Some(foo.canonicalize().unwrap()));
+            assert_eq!(run(&sb.argv(&["status"])), 0);
+        });
+    }
+
+    #[test]
+    fn base_with_spaces_and_unicode() {
+        with_sandbox(|sb| {
+            let path = sb.file("файл with space.txt", "a");
+            assert_eq!(run(&sb.argv(&["base", path.to_str().unwrap()])), 0);
+            assert_eq!(state::load().unwrap(), Some(path.canonicalize().unwrap()));
+        });
+    }
+
+    #[test]
+    fn base_missing_file_errors() {
+        with_sandbox(|sb| {
+            let missing = sb.dir.join("does-not-exist.c");
+            assert_eq!(run(&sb.argv(&["base", missing.to_str().unwrap()])), 1);
+            assert_eq!(state::load().unwrap(), None);
+        });
+    }
+
+    #[test]
+    fn compare_without_base_errors() {
+        with_sandbox(|sb| {
+            let bar = sb.file("bar.c", "b");
+            assert_eq!(run(&sb.argv(&["compare", bar.to_str().unwrap()])), 1);
+        });
+    }
+
+    #[test]
+    fn compare_with_missing_target_errors() {
+        with_sandbox(|sb| {
+            let foo = sb.file("foo.c", "a");
+            run(&sb.argv(&["base", foo.to_str().unwrap()]));
+            let missing = sb.dir.join("nope.c");
+            assert_eq!(run(&sb.argv(&["compare", missing.to_str().unwrap()])), 1);
+        });
+    }
+
+    #[test]
+    fn compare_with_deleted_base_errors() {
+        with_sandbox(|sb| {
+            let foo = sb.file("foo.c", "a");
+            run(&sb.argv(&["base", foo.to_str().unwrap()]));
+            fs::remove_file(&foo).unwrap();
+            let bar = sb.file("bar.c", "b");
+            assert_eq!(run(&sb.argv(&["compare", bar.to_str().unwrap()])), 1);
+        });
+    }
+
+    #[test]
+    fn compare_without_zed_reports_missing_executable() {
+        // `zed` is not guaranteed absent on every machine; pin PATH to the
+        // empty sandbox dir so `zed` cannot be found without spawning Zed.
+        with_sandbox(|sb| {
+            let foo = sb.file("foo.c", "a");
+            let bar = sb.file("bar.c", "b");
+            run(&sb.argv(&["base", foo.to_str().unwrap()]));
+            let prev_path = std::env::var_os("PATH");
+            std::env::set_var("PATH", &sb.dir);
+            let code = run(&sb.argv(&["compare", bar.to_str().unwrap()]));
+            match prev_path {
+                Some(v) => std::env::set_var("PATH", v),
+                None => std::env::remove_var("PATH"),
+            }
+            assert_eq!(code, 1);
+        });
+    }
+
+    #[test]
+    fn clear_removes_base() {
+        with_sandbox(|sb| {
+            let foo = sb.file("foo.c", "a");
+            run(&sb.argv(&["base", foo.to_str().unwrap()]));
+            assert_eq!(run(&sb.argv(&["clear"])), 0);
+            assert_eq!(state::load().unwrap(), None);
+        });
+    }
+
+    #[test]
+    fn unknown_command_exits_2() {
+        assert_eq!(run(&["frobnicate".to_string()]), 2);
+        assert_eq!(run(&[]), 2);
+    }
+}
