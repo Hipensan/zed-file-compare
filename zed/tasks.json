@@ -1,0 +1,18 @@
+{
+  "AnyDiff: Set as Base": {
+    "command": "zed-anydiff",
+    "args": ["base", "$ZED_FILE"]
+  },
+  "AnyDiff: Compare with Base": {
+    "command": "zed-anydiff",
+    "args": ["compare", "$ZED_FILE"]
+  },
+  "AnyDiff: Show Base": {
+    "command": "zed-anydiff",
+    "args": ["status"]
+  },
+  "AnyDiff: Clear Base": {
+    "command": "zed-anydiff",
+    "args": ["clear"]
+  }
+}
