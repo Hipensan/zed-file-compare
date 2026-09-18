@@ -10,6 +10,7 @@
 use std::path::{Path, PathBuf};
 
 use crate::state;
+use crate::zed;
 
 const USAGE: &str = "Usage: zed-anydiff <base|compare|status|clear>\n\n\
                      base FILE      persist FILE as the base\n\
@@ -26,6 +27,7 @@ pub fn run(args: &[String]) -> i32 {
     let (command, rest) = (args[0].as_str(), &args[1..]);
     match command {
         "base" => cmd_base(rest),
+        "compare" => cmd_compare(rest),
         "status" => cmd_status(),
         "clear" => cmd_clear(),
         other => {
@@ -78,6 +80,57 @@ fn cmd_base(rest: &[String]) -> i32 {
             println!("Base file: {}", base.display());
             0
         }
+        Err(e) => {
+            eprintln!("Error: {e}");
+            1
+        }
+    }
+}
+
+fn cmd_compare(rest: &[String]) -> i32 {
+    let path = match require_single_path(rest) {
+        Ok(p) => p,
+        Err(e) => {
+            eprintln!("Error: {e}");
+            eprintln!("{USAGE}");
+            return 1;
+        }
+    };
+    let base = match state::load() {
+        Ok(Some(b)) => b,
+        Ok(None) => {
+            eprintln!("Error: no base file selected.");
+            eprintln!("Run:");
+            eprintln!("  zed-anydiff base <FILE>");
+            return 1;
+        }
+        Err(e) => {
+            eprintln!("Error: {e}");
+            return 1;
+        }
+    };
+    // Re-verify at compare time: the base may have been deleted since it was
+    // stored, and we should say so rather than handing a dead path to Zed.
+    if !base.is_file() {
+        eprintln!("Error: base file no longer exists: {}", base.display());
+        eprintln!("Run:");
+        eprintln!("  zed-anydiff base <FILE>");
+        return 1;
+    }
+    let target = match canonicalize(&path, "Target") {
+        Ok(t) => t,
+        Err(e) => {
+            eprintln!("Error: {e}");
+            return 1;
+        }
+    };
+    println!("Comparing:");
+    println!("  base:   {}", base.display());
+    println!("  target: {}", target.display());
+    // The base is deliberately left in place so further `compare` calls
+    // reuse it.
+    match zed::launch_diff(&base, &target) {
+        Ok(()) => 0,
         Err(e) => {
             eprintln!("Error: {e}");
             1
