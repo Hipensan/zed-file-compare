@@ -1,0 +1,18 @@
+[package]
+name = "zed-anydiff"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "Compare any two files in Zed, even outside the current project"
+repository = "https://github.com/Hipensan/zed-file-compare"
+
+[[bin]]
+name = "zed-anydiff"
+path = "src/main.rs"
+
+[dependencies]
+dirs = "6"
+serde_json = "1"
+
+[profile.release]
+strip = true
