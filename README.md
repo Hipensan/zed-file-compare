@@ -104,6 +104,23 @@ The base is stored as `{"base": "<absolute path>"}` in the OS cache directory:
 - A single base slot — no history, no named slots, no swap.
 - Paths with spaces and Unicode are safe: arguments are passed to the OS as a vector, never through a shell.
 - The `--diff` window is an empty Zed workspace: the two files open as a diff view, not as worktrees, so it inherits Zed's remembered dock layout for empty workspaces (the `default_dock_state` KVP). An empty project panel can therefore appear next to the diff — Zed's standard behavior, not a `zed-anydiff` defect.
+- If you'd rather have the diff open **without** the side project panel, do this once: Zed persists the dock layout of any empty workspace into the `default_dock_state` key-value (KVP) in its local database; set the left dock's `visible` to `false` there. On Windows that is:
+
+  ```
+  %LOCALAPPDATA%\zed\db\0-stable\db.sqlite   →   kv_store table, key `default_dock_state`
+  ```
+
+  (Linux: `~/.config/zed/db/0-stable/db.sqlite`; macOS: `~/Library/Application Support/zed/db/0-stable/db.sqlite`.)
+
+  The value is a JSON object `{"left":{...},"right":{...},"bottom":{...}}`. Set `left.visible` to `false`:
+
+  ```
+  UPDATE kv_store
+     SET value='{"left":{"visible":false,"active_panel":null,"zoom":false},"right":{"visible":false,"active_panel":null,"zoom":false},"bottom":{"visible":false,"active_panel":null,"zoom":false}}'
+   WHERE key='default_dock_state';
+  ```
+
+  After this, new `--diff` windows open with no side panel. If you later close a diff window that **still shows** the panel, Zed re-persists the current layout and may flip `left.visible` back to `true` — re-run the `UPDATE` once if that happens. You can also get the same result the one-off way: open any empty workspace, close the left dock (`Ctrl+B` on Windows, `⌘B` on macOS, `Ctrl+B` on Linux), then close that window; Zed saves that layout for future empty workspaces.
 
 ## License
 
