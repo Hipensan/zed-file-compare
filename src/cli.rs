@@ -46,6 +46,15 @@ fn require_single_path(rest: &[String]) -> Result<PathBuf, String> {
     }
 }
 
+/// Whether the invocation was requested quietly, e.g. by a Zed task that sets
+/// `ZED_ANYDIFF_QUIET=1` in its `env`. Errors are always printed regardless.
+fn quiet() -> bool {
+    matches!(
+        std::env::var("ZED_ANYDIFF_QUIET"),
+        Ok(v) if v == "1" || v.eq_ignore_ascii_case("true")
+    )
+}
+
 /// Resolve a user-supplied path to an absolute, normalized path.
 /// On Windows this also resolves the drive-letter case, so `D:\X\y` and
 /// `d:\x\y` refer to the same file.
@@ -77,7 +86,9 @@ fn cmd_base(rest: &[String]) -> i32 {
     };
     match state::save(&base) {
         Ok(()) => {
-            println!("Base file: {}", base.display());
+            if !quiet() {
+                println!("Base file: {}", base.display());
+            }
             0
         }
         Err(e) => {
@@ -124,9 +135,11 @@ fn cmd_compare(rest: &[String]) -> i32 {
             return 1;
         }
     };
-    println!("Comparing:");
-    println!("  base:   {}", base.display());
-    println!("  target: {}", target.display());
+    if !quiet() {
+        println!("Comparing:");
+        println!("  base:   {}", base.display());
+        println!("  target: {}", target.display());
+    }
     // The base is deliberately left in place so further `compare` calls
     // reuse it.
     match zed::launch_diff(&base, &target) {
@@ -313,6 +326,23 @@ mod tests {
             run(&sb.argv(&["base", foo.to_str().unwrap()]));
             assert_eq!(run(&sb.argv(&["clear"])), 0);
             assert_eq!(state::load().unwrap(), None);
+        });
+    }
+
+    #[test]
+    fn quiet_flag_is_respected() {
+        with_sandbox(|sb| {
+            let foo = sb.file("foo.c", "a");
+            // Without the flag the base is still persisted; the quiet flag only
+            // gates stdout, which we assert here via `quiet()` directly since
+            // capturing a child's stdout is not what `run` exposes.
+            assert!(!quiet());
+            std::env::set_var("ZED_ANYDIFF_QUIET", "1");
+            assert!(quiet());
+            assert_eq!(run(&sb.argv(&["base", foo.to_str().unwrap()])), 0);
+            assert_eq!(state::load().unwrap(), Some(foo.canonicalize().unwrap()));
+            std::env::remove_var("ZED_ANYDIFF_QUIET");
+            assert!(!quiet());
         });
     }
 

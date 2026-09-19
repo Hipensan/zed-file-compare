@@ -1,18 +1,35 @@
-{
-  "AnyDiff: Set as Base": {
+[
+  {
+    "label": "AnyDiff: Set as Base",
     "command": "zed-anydiff",
-    "args": ["base", "$ZED_FILE"]
+    "args": ["base", "$ZED_FILE"],
+    "env": { "ZED_ANYDIFF_QUIET": "1" },
+    "show_summary": false,
+    "show_command": false,
+    "hide": "on_success"
   },
-  "AnyDiff: Compare with Base": {
+  {
+    "label": "AnyDiff: Compare with Base",
     "command": "zed-anydiff",
-    "args": ["compare", "$ZED_FILE"]
+    "args": ["compare", "$ZED_FILE"],
+    "env": { "ZED_ANYDIFF_QUIET": "1" },
+    "show_summary": false,
+    "show_command": false,
+    "hide": "on_success"
   },
-  "AnyDiff: Show Base": {
+  {
+    "label": "AnyDiff: Show Base",
     "command": "zed-anydiff",
-    "args": ["status"]
+    "args": ["status"],
+    "show_summary": false,
+    "show_command": false
   },
-  "AnyDiff: Clear Base": {
+  {
+    "label": "AnyDiff: Clear Base",
     "command": "zed-anydiff",
-    "args": ["clear"]
+    "args": ["clear"],
+    "show_summary": false,
+    "show_command": false,
+    "hide": "on_success"
   }
-}
+]
